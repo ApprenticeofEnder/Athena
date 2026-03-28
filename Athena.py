@@ -1,12 +1,11 @@
-import discord
-from discord.ext import commands
-import yt_dlp as youtube_dl  # Use yt-dlp instead of youtube_dl
 import asyncio
-import time
+import random
 import re
 from collections import defaultdict, deque
-import random
 
+import discord
+import yt_dlp as youtube_dl  # Use yt-dlp instead of youtube_dl
+from discord.ext import commands
 
 # Define intents
 intents = discord.Intents.default()
@@ -31,15 +30,17 @@ YDL_SEARCH_OPTS = {
 }
 
 
-
 # Initialize bot
 bot = commands.Bot(command_prefix="&", intents=intents)
+
 
 @bot.event
 async def on_ready():
     print("Salutations.")
 
+
 join_locks = {}  # one lock per guild to avoid concurrent connects
+
 
 def get_guild_lock(guild_id: int) -> asyncio.Lock:
     lock = join_locks.get(guild_id)
@@ -48,20 +49,26 @@ def get_guild_lock(guild_id: int) -> asyncio.Lock:
         join_locks[guild_id] = lock
     return lock
 
+
 def _fmt_time(sec):
-    if sec is None: return "Unknown"
+    if sec is None:
+        return "Unknown"
     sec = int(max(0, sec))
     m, s = divmod(sec, 60)
     h, m = divmod(m, 60)
     return f"{h}:{m:02d}:{s:02d}" if h else f"{m:02d}:{s:02d}"
 
+
 def _headers_str(h: dict | None) -> str:
     # FFmpeg expects CRLF between headers
-    if not h: return ""
+    if not h:
+        return ""
     return "\r\n".join(f"{k}: {v}" for k, v in h.items())
 
+
 def _clamp(x, lo, hi):
-    return max(lo,min(hi,x))
+    return max(lo, min(hi, x))
+
 
 def _parse_timestamp(s: str):
     """
@@ -81,8 +88,10 @@ def _parse_timestamp(s: str):
         return h * 3600 + m * 60 + sec
     return None
 
+
 def is_playlist_link(url: str) -> bool:
     return "list=" in url or "/playlist?" in url
+
 
 def extract_playlist(url: str, max_items: int = 50):
     """
@@ -91,8 +100,8 @@ def extract_playlist(url: str, max_items: int = 50):
     """
     opts = {
         **YDL_SEARCH_OPTS,
-        "noplaylist": False,                  # allow playlist extraction here
-        "extract_flat": "in_playlist",       # no stream links; fast
+        "noplaylist": False,  # allow playlist extraction here
+        "extract_flat": "in_playlist",  # no stream links; fast
         "quiet": True,
     }
     with youtube_dl.YoutubeDL(opts) as ydl:
@@ -105,14 +114,15 @@ def extract_playlist(url: str, max_items: int = 50):
         vid_id = e.get("id")
         title = e.get("title", "Unknown")
         duration = e.get("duration")  # often None in flat
-        page_url = e.get("url") or (f"https://www.youtube.com/watch?v={vid_id}" if vid_id else None)
+        page_url = e.get("url") or (
+            f"https://www.youtube.com/watch?v={vid_id}" if vid_id else None
+        )
         if page_url:
             # Sometimes flat URLs are just video IDs; ensure full URL
             if not page_url.startswith("http"):
                 page_url = f"https://www.youtube.com/watch?v={page_url}"
             out.append((page_url, title, duration))
     return out
-    
 
 
 async def play_next_in_queue(ctx):
@@ -129,6 +139,7 @@ async def play_next_in_queue(ctx):
     next_url, next_title, requester_id, duration = queues[guild_id].popleft()
     await ctx.invoke(play, url=next_url)
 
+
 @bot.command()
 async def join(ctx):
     """Join the caller's VC."""
@@ -139,9 +150,13 @@ async def join(ctx):
     me = ctx.guild.me
     perms = channel.permissions_for(me)
     if not perms.connect:
-        return await ctx.send(f"I don't have **Connect** permission for {channel.mention}.")
+        return await ctx.send(
+            f"I don't have **Connect** permission for {channel.mention}."
+        )
     if not perms.speak:
-        return await ctx.send(f"I don't have **Speak** permission in {channel.mention}.")
+        return await ctx.send(
+            f"I don't have **Speak** permission in {channel.mention}."
+        )
 
     lock = get_guild_lock(ctx.guild.id)
     async with lock:
@@ -168,18 +183,23 @@ async def join(ctx):
             await ctx.send(f"Joined {channel.mention}.")
 
         except asyncio.TimeoutError:
-            await ctx.send("Timed out connecting to voice. Try again in a few seconds.")
+            await ctx.send(
+                "Timed out connecting to voice. Try again in a few seconds."
+            )
         except discord.errors.ConnectionClosed as e:
             try:
                 if ctx.voice_client:
                     await ctx.voice_client.disconnect(force=True)
             except Exception:
                 pass
-            await ctx.send(f"Voice gateway closed ({getattr(e, 'code', 'unknown')}). Please run `&join` again.")
+            await ctx.send(
+                f"Voice gateway closed ({getattr(e, 'code', 'unknown')}). Please run `&join` again."
+            )
         except discord.ClientException as e:
             await ctx.send(f"Couldn't join voice: {e}")
         except RuntimeError as e:
             await ctx.send(f"Voice setup error (PyNaCl/Opus?): {e}")
+
 
 @bot.command()
 async def leave(ctx):
@@ -188,6 +208,7 @@ async def leave(ctx):
         await ctx.voice_client.disconnect()
     else:
         await ctx.send("I am not currently in a voice channel.")
+
 
 @bot.command()
 async def pause(ctx):
@@ -198,6 +219,7 @@ async def pause(ctx):
     else:
         await ctx.send("No playback currently active.")
 
+
 @bot.command()
 async def resume(ctx):
     """Resume paused playback."""
@@ -206,6 +228,7 @@ async def resume(ctx):
         await ctx.send("Playback resumed.")
     else:
         await ctx.send("No playback currently active.")
+
 
 @bot.command()
 async def skip(ctx):
@@ -216,12 +239,16 @@ async def skip(ctx):
     else:
         await ctx.send("No playback currently active.")
 
+
 @bot.command()
 async def loop(ctx):
     """Enable looping of current song."""
     global looping
     looping = not looping
-    await ctx.send(f"Playback loop has been {'enabled' if looping else 'disabled'}.")
+    await ctx.send(
+        f"Playback loop has been {'enabled' if looping else 'disabled'}."
+    )
+
 
 @bot.command()
 async def nowplaying(ctx):
@@ -229,25 +256,29 @@ async def nowplaying(ctx):
     vc = ctx.voice_client
     if not vc or not (vc.is_playing() or vc.is_paused()):
         return await ctx.send("No current playback.")
-    
+
     if not current_title:
         return await ctx.send("Please wait. No available metadata as of yet.")
-    
+
     status = "Paused." if vc.is_paused() else "Playing."
     duration_str = _fmt_time(current_duration)
 
     embed = discord.Embed(
         title="Now Playing",
-        description=f"[{current_title}]({current_webpage_url})" if current_webpage_url else current_title,
+        description=f"[{current_title}]({current_webpage_url})"
+        if current_webpage_url
+        else current_title,
         color=0x5865F2,
     )
-    embed.add_field(name="Status", value =status, inline=True)
+    embed.add_field(name="Status", value=status, inline=True)
     embed.add_field(name="Duration", value=duration_str, inline=True)
 
     if current_requester_id:
         member = ctx.guild.get_member(current_requester_id)
         if member:
-            embed.add_field(name="Requested by: ", value=member.mention, inline=True)
+            embed.add_field(
+                name="Requested by: ", value=member.mention, inline=True
+            )
 
     if current_thumbnail:
         embed.set_thumbnail(url=current_thumbnail)
@@ -256,13 +287,16 @@ async def nowplaying(ctx):
 
     await ctx.send(embed=embed)
 
+
 @bot.command()
 async def search(ctx, *, query: str):
     """Search YouTube and list the top 5 results (plain text)."""
-    import yt_dlp as youtube_dl
     import asyncio
 
+    import yt_dlp as youtube_dl
+
     async with ctx.typing():
+
         def _extract():
             opts = {**YDL_SEARCH_OPTS, "default_search": "ytsearch5"}
             with youtube_dl.YoutubeDL(opts) as ydl:
@@ -271,7 +305,9 @@ async def search(ctx, *, query: str):
                 return entries[:5]
 
         try:
-            results = await asyncio.get_running_loop().run_in_executor(None, _extract)
+            results = await asyncio.get_running_loop().run_in_executor(
+                None, _extract
+            )
         except Exception as e:
             return await ctx.send(f" Search failed: {e}")
 
@@ -287,20 +323,26 @@ async def search(ctx, *, query: str):
         uploader = e.get("uploader") or e.get("channel") or ""
         url = e.get("webpage_url") or e.get("url")
 
-        final_results.append({
-            "title": title,
-            "duration": e.get("duration"),
-            "uploader": uploader,
-            "webpage_url": url,
-        })
+        final_results.append(
+            {
+                "title": title,
+                "duration": e.get("duration"),
+                "uploader": uploader,
+                "webpage_url": url,
+            }
+        )
 
-        line = f"{i}. {title} ({dur}{' • ' + uploader if uploader else ''})\n{url}"
+        line = (
+            f"{i}. {title} ({dur}{' • ' + uploader if uploader else ''})\n{url}"
+        )
         out.append(line)
 
     search_results[(ctx.guild.id, ctx.author.id)] = final_results
 
     msg = "\n\n".join(out)
-    await ctx.send(f"**Search results for:** {query}\nUse `&pick 1-5` to choose:\n```{msg}```")
+    await ctx.send(
+        f"**Search results for:** {query}\nUse `&pick 1-5` to choose:\n```{msg}```"
+    )
 
 
 @bot.command()
@@ -310,30 +352,35 @@ async def pick(ctx, index: int):
     results = search_results.get(key)
 
     if not results:
-        return await ctx.send("You have no recernt searches. Please run '&search <query> first.'")
-    
-    max_idx = min(5,len(results))
-    if not (1<= index <= max_idx):
+        return await ctx.send(
+            "You have no recernt searches. Please run '&search <query> first.'"
+        )
+
+    max_idx = min(5, len(results))
+    if not (1 <= index <= max_idx):
         return await ctx.send(f"Please input a number between 1 and {max_idx}.")
 
-    choice = results[index-1]
+    choice = results[index - 1]
     title = choice.get("title", "Unknown")
     url = choice.get("webpage_url") or choice.get("url")
 
     if not url:
-        return await ctx.send("Could not locate usable URL for that result, apologies.")
+        return await ctx.send(
+            "Could not locate usable URL for that result, apologies."
+        )
 
     await ctx.send(f"You picked **{index}.**\n{url}")
 
-    #feed it to the play command
+    # feed it to the play command
     try:
         await ctx.invoke(play, url=url)
     except Exception as e:
         await ctx.send(f"Failed to play **{title}**: {e}")
 
+
 @bot.command()
 async def vol(ctx, percent: int | None = None):
-    """Get/Set global volume for the bot. Volume values go from 0 - 200. """
+    """Get/Set global volume for the bot. Volume values go from 0 - 200."""
 
     global volume
 
@@ -349,23 +396,26 @@ async def vol(ctx, percent: int | None = None):
     p = _clamp(percent, 0, 200)
     volume = p / 100.0
 
-    #adjust volume live if playing
+    # adjust volume live if playing
 
-    vc = ctx.voice_client 
+    vc = ctx.voice_client
     if vc and vc.source:
         try:
             if isinstance(vc.source, discord.PCMVolumeTransformer):
                 vc.source.volume = volume
             else:
-                vc.source = discord.PCMVolumeTransformer(vc.source, volume=volume)
+                vc.source = discord.PCMVolumeTransformer(
+                    vc.source, volume=volume
+                )
         except Exception:
             pass
 
         await ctx.send(f"Volume has been set to **{p}%**")
 
+
 @bot.command()
 async def seek(ctx, position: str):
-    """Jump to a timestamp in the current track. Accepts seconds, m:s and h:m:s """
+    """Jump to a timestamp in the current track. Accepts seconds, m:s and h:m:s"""
     vc = ctx.voice_client
     if not vc or not (vc.is_playing() or vc.is_paused()):
         return await ctx.send(" Nothing is playing.")
@@ -377,7 +427,9 @@ async def seek(ctx, position: str):
 
     # we need to know what to re-extract (page URL). If missing, bail nicely.
     if not current_webpage_url:
-        return await ctx.send("I don't have the source URL for this track. Try playing it again, then seek.")
+        return await ctx.send(
+            "I don't have the source URL for this track. Try playing it again, then seek."
+        )
 
     # re-extract a fresh direct audio URL (avoids expired links)
     try:
@@ -393,8 +445,10 @@ async def seek(ctx, position: str):
         ffmpeg_opts = "-vn"
         vc.stop()
         vc.play(
-            discord.FFmpegPCMAudio(stream_url, before_options=before, options=ffmpeg_opts),
-            after=lambda e: print(f"[seek] ffmpeg error: {e}") if e else None
+            discord.FFmpegPCMAudio(
+                stream_url, before_options=before, options=ffmpeg_opts
+            ),
+            after=lambda e: print(f"[seek] ffmpeg error: {e}") if e else None,
         )
         await ctx.send(f"Seeked to **{position}**.")
     except Exception as e:
@@ -409,7 +463,7 @@ async def queue(ctx):
     if not q:
         return await ctx.send("The queue is currently empty.")
 
-   # Format each queued song like search results
+    # Format each queued song like search results
     out = []
     for i, (url, title, requester_id, duration) in enumerate(q, start=1):
         member = ctx.guild.get_member(requester_id)
@@ -421,13 +475,13 @@ async def queue(ctx):
     msg = "\n\n".join(out)
     await ctx.send(f"**Current Queue ({len(q)} tracks):**\n```{msg}```")
 
-       
-    
+
 @bot.command()
 async def clear(ctx):
     """Clear the current queue."""
     queues[ctx.guild.id].clear()
     await ctx.send("Queue cleared.")
+
 
 @bot.command()
 async def shuffle(ctx):
@@ -438,6 +492,7 @@ async def shuffle(ctx):
     random.shuffle(tmp)
     queues[ctx.guild.id] = deque(tmp)
     await ctx.send("Queue shuffled.")
+
 
 @bot.command()
 async def skipto(ctx, index: int):
@@ -476,35 +531,38 @@ async def move(ctx, old: int, new: int):
         return await ctx.send("Queue is empty.")
     if not (1 <= old <= len(q) and 1 <= new <= len(q)):
         return await ctx.send(f"Indexes must be between 1 and {len(q)}.")
-    item = q[old-1]
-    del q[old-1]
-    q.insert(new-1, item)
+    item = q[old - 1]
+    del q[old - 1]
+    q.insert(new - 1, item)
     await ctx.send(f"Moved **{item[1]}** to position {new}.")
+
 
 @bot.command()
 async def playlist(ctx, url: str, limit: int = 50):
-    """Enqueue a Youtube Playlist, standard limit is 50, goes up to 200. """
+    """Enqueue a Youtube Playlist, standard limit is 50, goes up to 200."""
 
     if limit < 1 or limit > 200:
         return await ctx.send("Limit must be between 1 and 200.")
-    
+
     if not is_playlist_link(url):
-        return await ctx.send("This does not appear to be a playlist link. Please use the regular play command.")
+        return await ctx.send(
+            "This does not appear to be a playlist link. Please use the regular play command."
+        )
 
     await ctx.send("Loading playlist, this may take a moment.")
 
     try:
         entries = extract_playlist(url, max_items=limit)
-    except Exception as e:
+    except Exception:
         return await ctx.send("No playable entries located.")
 
     q = queues[ctx.guild.id]
     added = 0
     for page_url, title, duration in entries:
-        q.append((page_url,title,ctx.author.id,duration))
+        q.append((page_url, title, ctx.author.id, duration))
         added += 1
 
-    #if nothing is playing, start playback
+    # if nothing is playing, start playback
 
     vc = ctx.voice_client
     if not vc:
@@ -514,20 +572,25 @@ async def playlist(ctx, url: str, limit: int = 50):
         await play_next_in_queue(ctx)
 
     # Nice summary (first few items)
-    preview = "\n".join(f"{i+1}. {entries[i][1]}" for i in range(min(5, len(entries))))
-    more = f"\n… and {len(entries)-5} more." if len(entries) > 5 else ""
-    await ctx.send(f"Added **{added}** tracks to the queue.\n```{preview}{more}```") 
-
-
-
-
+    preview = "\n".join(
+        f"{i + 1}. {entries[i][1]}" for i in range(min(5, len(entries)))
+    )
+    more = f"\n… and {len(entries) - 5} more." if len(entries) > 5 else ""
+    await ctx.send(
+        f"Added **{added}** tracks to the queue.\n```{preview}{more}```"
+    )
 
 
 @bot.command()
 async def play(ctx, url: str):
     """Command to play audio from a YouTube URL."""
     global looping, current_url
-    global current_title, current_duration, current_webpage_url, current_thumbnail, current_requester_id
+    global \
+        current_title, \
+        current_duration, \
+        current_webpage_url, \
+        current_thumbnail, \
+        current_requester_id
 
     vc = ctx.voice_client
     if vc and (vc.is_playing() or vc.is_paused()):
@@ -562,7 +625,9 @@ async def play(ctx, url: str):
     current_title = info.get("title", "Unknown")
     current_duration = info.get("duration")
     current_webpage_url = current_url
-    current_thumbnail = info.get("thumbnail") or (info.get("thumbnails") or [{}])[-1].get("url")
+    current_thumbnail = info.get("thumbnail") or (
+        info.get("thumbnails") or [{}]
+    )[-1].get("url")
     current_requester_id = ctx.author.id
 
     # --- ffmpeg options (headers + reconnect) ---
@@ -593,7 +658,9 @@ async def play(ctx, url: str):
                 + '-user_agent "Mozilla/5.0"'
             )
             vc.stop()
-            base2 = discord.FFmpegPCMAudio(s2, before_options=bef2, options=opts)
+            base2 = discord.FFmpegPCMAudio(
+                s2, before_options=bef2, options=opts
+            )
             src2 = discord.PCMVolumeTransformer(base2, volume=volume)
             vc.play(src2, after=make_after())
         except Exception as ee:
@@ -608,15 +675,18 @@ async def play(ctx, url: str):
             else:
                 # when finished, advance the queue
                 ctx.bot.loop.create_task(play_next_in_queue(ctx))
+
         return _after
 
     # start playback
     vc.stop()
-    base_source = discord.FFmpegPCMAudio(stream_url,before_options=before, options =opts)
-    source = discord.PCMVolumeTransformer(base_source,volume=volume)
+    base_source = discord.FFmpegPCMAudio(
+        stream_url, before_options=before, options=opts
+    )
+    source = discord.PCMVolumeTransformer(base_source, volume=volume)
     vc.play(source, after=make_after())
 
     await ctx.send(f"Now playing: {current_title}")
 
-bot.run("INSERT_YOUR_TOKEN_HERE")
 
+bot.run("INSERT_YOUR_TOKEN_HERE")
